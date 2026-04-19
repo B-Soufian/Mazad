@@ -20,7 +20,7 @@ class ApiClient {
   }
 
   // Build headers with auth token
-  getHeaders(isFormData = false) {
+  rs(isFormData = false) {
     const headers = {
       'Accept': 'application/json',
     };

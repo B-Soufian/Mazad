@@ -1,20 +1,56 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import { 
   Plus, Trash2, Check, ChevronRight, ChevronLeft, 
   Package, Gavel, FileCheck, Image as ImageIcon, UploadCloud, Loader2
 } from 'lucide-react';
 
 const CreateAuction = () => {
+  const navigate = useNavigate();
+  const { user } = useSelector((state) => state.auth);
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
   
+  // Check authentication on mount
+  useEffect(() => {
+    if (!user) {
+      navigate('/auth/login');
+    }
+  }, [user, navigate]);
+
+  // Fetch categories from API
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/api/categories');
+        if (response.ok) {
+          const data = await response.json();
+          setCategories(data.data || data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch categories:', error);
+        // Fallback categories
+        setCategories([
+          { id: 'cat_01', name: 'Motors' },
+          { id: 'cat_02', name: 'Watches' }
+        ]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchCategories();
+  }, []);
+
   const [formData, setFormData] = useState({
     // Asset Data
     title: '',
     categoryId: 'cat_01',
     lotNumber: '',
-    ownerId: 'usr_002', // Ideally pulled from Auth Context
+    ownerId: user?.id || '', // Get from authenticated user
     conditionStatus: 'new',
     isHot: false,
     
@@ -77,11 +113,17 @@ const CreateAuction = () => {
 
   // --- LARAVEL API SUBMISSION ---
   const handleFinalSubmit = async () => {
+    if (!user) {
+      alert('Please log in first');
+      navigate('/auth/login');
+      return;
+    }
+
     setIsSubmitting(true);
     
     try {
       const assetForm = new FormData();
-      assetForm.append('owner_id', formData.ownerId);
+      assetForm.append('owner_id', user.id); // Use authenticated user's ID
       assetForm.append('category_id', formData.categoryId);
       assetForm.append('lot_number', formData.lotNumber);
       assetForm.append('title', formData.title);
@@ -101,12 +143,16 @@ const CreateAuction = () => {
         body: assetForm
       });
 
+      if (!assetRes.ok) {
+        const errorData = await assetRes.json();
+        throw new Error(errorData.message || 'Asset creation failed');
+      }
       
       const newAsset = await assetRes.json();
 
       // 3. Prepare Auction Data (Standard JSON is fine here)
       const auctionPayload = {
-        asset_id: newAsset.id,
+        asset_id: newAsset.data?.id || newAsset.id,
         status: "live",
         currency: formData.currency,
         starting_price: Number(formData.startingPrice),
@@ -127,8 +173,13 @@ const CreateAuction = () => {
         body: JSON.stringify(auctionPayload)
       });
 
+      if (!auctionRes.ok) {
+        const errorData = await auctionRes.json();
+        throw new Error(errorData.message || 'Auction creation failed');
+      }
 
       alert("Success! Auction is now live!");
+      navigate('/');
       // window.location.href = '/admin/live-auctions';
 
     } catch (error) {
